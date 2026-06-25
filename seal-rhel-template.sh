@@ -199,8 +199,47 @@ clean_optional_components() {
 
 clean_shell_history() {
   log "Clearing shell history files."
-  optional_run rm -f /root/.bash_history
-  optional_run find /home -maxdepth 2 -name .bash_history -type f -delete
+
+  clear_bash_history() {
+    history_file="$1"
+
+    [ -e "$history_file" ] || return 0
+    optional_run env HISTFILE="$history_file" bash -c 'history -c; history -w'
+    optional_run rm -f "$history_file"
+  }
+
+  clear_history_dir() {
+    home_dir="$1"
+
+    [ -n "$home_dir" ] || return 0
+    [ -d "$home_dir" ] || return 0
+
+    case "$home_dir" in
+      /|/bin|/boot|/dev|/etc|/proc|/run|/sbin|/sys|/tmp|/usr|/var)
+        log "Skip suspicious home directory while clearing history: $home_dir"
+        return 0
+        ;;
+    esac
+
+    clear_bash_history "$home_dir/.bash_history"
+  }
+
+  clear_history_dir /root
+
+  if command -v getent >/dev/null 2>&1; then
+    getent passwd | while IFS=: read -r _ _ uid _ _ home_dir _; do
+      case "$uid" in
+        ''|*[!0-9]*) continue ;;
+      esac
+
+      [ "$uid" -ge 1000 ] || continue
+      clear_history_dir "$home_dir"
+    done
+  elif [ -d /home ]; then
+    find /home -mindepth 2 -maxdepth 2 -name .bash_history -type f | while IFS= read -r history_file; do
+      clear_bash_history "$history_file"
+    done
+  fi
 }
 
 main() {
